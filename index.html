@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>UNYQ</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background-color: #1e1e1e;
+				margin: 0;
+				overflow: hidden;
+			}
+			#update{
+
+				color: grey;
+
+				background-color: #f7f7f7;
+
+
+				font-family: Arial;
+
+				opacity: 0.9;
+
+				font-size: 20px;
+
+				position: absolute;
+
+				padding: auto;
+
+
+				bottom: 0%;
+
+				height: 75px;
+
+				width: 100%;
+
+
+			}
+
+			#progressBar{
+
+
+				background-color: #000000;
+
+				opacity: 0.8;
+
+				position: absolute;
+
+				width: 0%;
+				height: 100%;
+				top: 0;
+
+
+			}
+			#text{
+
+
+				color: grey;
+
+
+				font-family: Arial;
+
+				font-size: 30px;
+
+
+				position: absolute;
+
+
+
+				height: 100%;
+
+				width: 100%;
+
+				text-align: center;
+				vertical-align: middle;
+				line-height: 75px;
+
+
+			}
+		</style>
+
+	</head>
+	<body>
+
+		<div id ='update'>
+			<div id="progressBar"></div>
+			<div id="text">App starting, please wait...</div>
+		</div>
+
+
+		<!-- shader -->
+		<script type="x-shader/x-vertex" id="vertexshader">
+					uniform float amplitude;
+					attribute float size;
+					attribute vec3 customColor;
+					varying vec3 vColor;
+					void main() {
+						vColor = customColor;
+						vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+						gl_PointSize = size * ( 300.0 / -mvPosition.z );
+						gl_Position = projectionMatrix * mvPosition;
+					}
+		</script>
+
+		<script type="x-shader/x-fragment" id="fragmentshader">
+					precision highp float;
+
+					uniform vec3 color;
+					uniform sampler2D texture;
+					varying vec3 vColor;
+					void main() {
+						gl_FragColor = vec4( color * vColor, 1.0 );
+						gl_FragColor = gl_FragColor * texture2D( texture, gl_PointCoord );
+					}
+		</script>
+
+		<script type="x-shader/x-vertex" id="vertexshader_DICOM">
+					varying vec4 vPos;
+
+					void main() {
+
+					  vPos = vec4(position, 1.0 );
+					  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0 );
+
+					}
+
+		</script>
+
+		<script type="x-shader/x-fragment" id="fragmentshader_DICOM">
+
+// uniforms
+uniform int uTextureSize;
+uniform sampler2D uTextureContainer[7];
+uniform ivec3 uDataDimensions;
+uniform mat4 uWorldToData;
+uniform float uWindowCenterWidth[2];
+uniform float uRescaleSlopeIntercept[2];
+uniform int uNumberOfChannels;
+uniform int uBitsAllocated;
+uniform int uInvert;
+uniform int uLut;
+uniform sampler2D uTextureLUT;
+uniform int uPixelType;
+uniform int uPackedPerPixel;
+uniform int uInterpolation;
+uniform float uCanvasWidth;
+uniform float uCanvasHeight;
+uniform vec3 uBorderColor;
+uniform float uBorderWidth;
+uniform float uBorderMargin;
+uniform float uBorderDashLength;
+uniform float opacity;
+
+
+// varying (should fetch it from vertex directly)
+varying vec4      vPos;
+
+// tailored functions
+
+void texture3d(in ivec3 dataCoordinates, out vec4 dataValue, out int offset){
+
+  int index = dataCoordinates.x
+            + dataCoordinates.y * uDataDimensions.x
+            + dataCoordinates.z * uDataDimensions.y * uDataDimensions.x;
+  int indexP = int(index/uPackedPerPixel);
+  offset = index - 2*indexP;
+
+  // Map data index to right sampler2D texture
+  int voxelsPerTexture = uTextureSize*uTextureSize;
+  int textureIndex = int(floor(float(indexP) / float(voxelsPerTexture)));
+  // modulo seems incorrect sometimes...
+  // int inTextureIndex = int(mod(float(index), float(textureSize*textureSize)));
+  int inTextureIndex = indexP - voxelsPerTexture*textureIndex;
+
+  // Get row and column in the texture
+  int colIndex = int(mod(float(inTextureIndex), float(uTextureSize)));
+  int rowIndex = int(floor(float(inTextureIndex)/float(uTextureSize)));
+
+  // Map row and column to uv
+  vec2 uv = vec2(0,0);
+  uv.x = (0.5 + float(colIndex)) / float(uTextureSize);
+  uv.y = 1. - (0.5 + float(rowIndex)) / float(uTextureSize);
+
+  //
+  if(textureIndex == 0){ dataValue = texture2D(uTextureContainer[0], uv); }
+  else if(textureIndex == 1){dataValue = texture2D(uTextureContainer[1], uv);}
+  else if(textureIndex == 2){ dataValue = texture2D(uTextureContainer[2], uv); }
+  else if(textureIndex == 3){ dataValue = texture2D(uTextureContainer[3], uv); }
+  else if(textureIndex == 4){ dataValue = texture2D(uTextureContainer[4], uv); }
+  else if(textureIndex == 5){ dataValue = texture2D(uTextureContainer[5], uv); }
+  else if(textureIndex == 6){ dataValue = texture2D(uTextureContainer[6], uv); }
+
+}
+
+
+void uInt16(in float r, in float a, out float value){
+  value = r * 256. + a * 65536.;
+}
+
+
+void unpack(in vec4 packedData, in int offset, out vec4 unpackedData){
+
+
+uInt16(
+  packedData.r * float( 1 - offset) + packedData.b * float(offset),
+  packedData.g * float( 1 - offset) + packedData.a * float(offset),
+  unpackedData.x);
+
+
+}
+
+
+void interpolationIdentity(in vec3 currentVoxel, out vec4 dataValue){
+  // lower bound
+  vec3 rcurrentVoxel = vec3(floor(currentVoxel.x + 0.5 ), floor(currentVoxel.y + 0.5 ), floor(currentVoxel.z + 0.5 ));
+  ivec3 voxel = ivec3(int(rcurrentVoxel.x), int(rcurrentVoxel.y), int(rcurrentVoxel.z));
+
+  vec4 tmp = vec4(0., 0., 0., 0.);
+  int offset = 0;
+
+  texture3d(voxel, tmp, offset);
+  unpack(tmp, offset, dataValue);
+}
+
+
+void interpolationTrilinear(in vec3 currentVoxel, out vec4 dataValue, out vec3 gradient){
+
+  // https://en.wikipedia.org/wiki/Trilinear_interpolation
+  vec3 lower_bound = vec3(floor(currentVoxel.x), floor(currentVoxel.y), floor(currentVoxel.z));
+  if(lower_bound.x < 0.){
+    lower_bound.x = 0.;
+  }
+  if(lower_bound.y < 0.){
+    lower_bound.y = 0.;
+  }
+  if(lower_bound.z < 0.){
+    lower_bound.z = 0.;
+  }
+
+  vec3 higher_bound = lower_bound + vec3(1);
+
+  float xd = ( currentVoxel.x - lower_bound.x ) / ( higher_bound.x - lower_bound.x );
+  float yd = ( currentVoxel.y - lower_bound.y ) / ( higher_bound.y - lower_bound.y );
+  float zd = ( currentVoxel.z - lower_bound.z ) / ( higher_bound.z - lower_bound.z );
+
+  //
+  // c00
+  //
+
+  //
+
+  vec4 v000 = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 c000 = vec3(lower_bound.x, lower_bound.y, lower_bound.z);
+  interpolationIdentity(c000, v000);
+  vec3 g000 = v000.r * vec3(-1., -1., -1.);
+
+  //
+
+  vec4 v100 = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 c100 = vec3(higher_bound.x, lower_bound.y, lower_bound.z);
+  interpolationIdentity(c100, v100);
+  vec3 g100 = v100.r * vec3(1., -1., -1.);
+
+  vec4 c00 = v000 * ( 1.0 - xd ) + v100 * xd;
+
+  //
+  // c01
+  //
+  vec4 v001 = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 c001 = vec3(lower_bound.x, lower_bound.y, higher_bound.z);
+  interpolationIdentity(c001, v001);
+  vec3 g001 = v001.r * vec3(-1., -1., 1.);
+
+  vec4 v101 = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 c101 = vec3(higher_bound.x, lower_bound.y, higher_bound.z);
+  interpolationIdentity(c101, v101);
+  vec3 g101 = v101.r * vec3(1., -1., 1.);
+
+  vec4 c01 = v001 * ( 1.0 - xd ) + v101 * xd;
+
+  //
+  // c10
+  //
+  vec4 v010 = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 c010 = vec3(lower_bound.x, higher_bound.y, lower_bound.z);
+  interpolationIdentity(c010, v010);
+  vec3 g010 = v010.r * vec3(-1., 1., -1.);
+
+  vec4 v110 = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 c110 = vec3(higher_bound.x, higher_bound.y, lower_bound.z);
+  interpolationIdentity(c110, v110);
+  vec3 g110 = v110.r * vec3(1., 1., -1.);
+
+  vec4 c10 = v010 * ( 1.0 - xd ) + v110 * xd;
+
+  //
+  // c11
+  //
+  vec4 v011 = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 c011 = vec3(lower_bound.x, higher_bound.y, higher_bound.z);
+  interpolationIdentity(c011, v011);
+  vec3 g011 = v011.r * vec3(-1., 1., 1.);
+
+  vec4 v111 = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 c111 = vec3(higher_bound.x, higher_bound.y, higher_bound.z);
+  interpolationIdentity(c111, v111);
+  vec3 g111 = v111.r * vec3(1., 1., 1.);
+
+  vec4 c11 = v011 * ( 1.0 - xd ) + v111 * xd;
+
+  // c0 and c1
+  vec4 c0 = c00 * ( 1.0 - yd) + c10 * yd;
+  vec4 c1 = c01 * ( 1.0 - yd) + c11 * yd;
+
+  // c
+  vec4 c = c0 * ( 1.0 - zd) + c1 * zd;
+  dataValue = c;
+
+  // compute gradient
+  gradient = g000 + g100 + g010 + g110 + g011 + g111 + g110 + g011;
+  // gradientMagnitude = length(gradient);
+  // // https://en.wikipedia.org/wiki/Normal_(geometry)#Transforming_normals
+  // vec3 localNormal = (-1. / gradientMagnitude) * gradient;
+  // normal = normalize(normalPixelToPatientundefined * localNormal);
+  //normal = gradient;
+
+}
+
+
+
+// main loop
+
+void main(void) {
+
+  // draw border if slice is cropped
+  // float uBorderDashLength = 10.;
+
+  if( uCanvasWidth > 0. &&
+      ((gl_FragCoord.x > uBorderMargin && (gl_FragCoord.x - uBorderMargin) < uBorderWidth) ||
+       (gl_FragCoord.x < (uCanvasWidth - uBorderMargin) && (gl_FragCoord.x + uBorderMargin) > (uCanvasWidth - uBorderWidth) ))){
+    float valueY = mod(gl_FragCoord.y, 2. * uBorderDashLength);
+    if( valueY < uBorderDashLength && gl_FragCoord.y > uBorderMargin && gl_FragCoord.y < (uCanvasHeight - uBorderMargin) ){
+      gl_FragColor = vec4(uBorderColor, 1.);
+      return;
+    }
+  }
+
+  if( uCanvasHeight > 0. &&
+      ((gl_FragCoord.y > uBorderMargin && (gl_FragCoord.y - uBorderMargin) < uBorderWidth) ||
+       (gl_FragCoord.y < (uCanvasHeight - uBorderMargin) && (gl_FragCoord.y + uBorderMargin) > (uCanvasHeight - uBorderWidth) ))){
+    float valueX = mod(gl_FragCoord.x, 2. * uBorderDashLength);
+    if( valueX < uBorderDashLength && gl_FragCoord.x > uBorderMargin && gl_FragCoord.x < (uCanvasWidth - uBorderMargin) ){
+      gl_FragColor = vec4(uBorderColor, 1.);
+      return;
+    }
+  }
+
+  // get texture coordinates of current pixel
+  vec4 dataCoordinates = uWorldToData * vPos;
+  vec3 currentVoxel = vec3(dataCoordinates.x, dataCoordinates.y, dataCoordinates.z);
+  vec4 dataValue = vec4(0., 0., 0., 0.);
+  vec3 gradient = vec3(0., 0., 0.);
+  interpolationTrilinear(currentVoxel, dataValue, gradient);
+
+  // how do we deal wil more than 1 channel?
+  if(uNumberOfChannels == 1){
+    float intensity = dataValue.r;
+
+    // rescale/slope
+    intensity = intensity*uRescaleSlopeIntercept[0] + uRescaleSlopeIntercept[1];
+
+    float windowMin = uWindowCenterWidth[0] - uWindowCenterWidth[1] * 0.5;
+    float windowMax = uWindowCenterWidth[0] + uWindowCenterWidth[1] * 0.5;
+    intensity = ( intensity - windowMin ) / uWindowCenterWidth[1];
+
+    dataValue.r = dataValue.g = dataValue.b = intensity;
+    dataValue.a = 1.0;
+  }
+
+  // Apply LUT table...
+  //
+  if(uLut == 1){
+    // should opacity be grabbed there?
+    dataValue = texture2D( uTextureLUT, vec2( dataValue.r , 1.0) );
+  }
+
+  if(uInvert == 1){
+    dataValue = vec4(1.) - dataValue;
+    // how do we deal with that and opacity?
+    dataValue.a = 1.;
+  }
+
+
+
+  gl_FragColor = vec4(dataValue.xyz,opacity);
+
+    // if on edge, draw line
+  // float xPos = gl_FragCoord.x/512.;
+  // float yPos = gl_FragCoord.y/512.;
+  // if( xPos < 0.05 || xPos > .95 || yPos < 0.05 || yPos > .95){
+  //   gl_FragColor = vec4(xPos, yPos, 0., 1.);//dataValue;
+  //   //return;
+  // }
+
+}
+
+
+
+		</script>
+
+
+		<!-- supporting modules -->
+		<script src="src/vectorFunctions.js"></script>
+		<script src="src/three.min.js"></script>
+		<script src="src/OBJLoader.js"></script>
+		<script src="src/STLBinaryExport.js"></script>
+		<script src="src/NURBSSurface.js"></script>
+		<script src="src/NURBSUtils.js"></script>
+		<script src="src/ami.min.js"></script>
+		<script src="src/TransformControls.js"></script>
+		<script src="src/verb.js"></script>
+		<script src="src/verbToThreeConversion.js"></script>
+		<script src="src/OBJExporter_SB.js"></script>
+		<script src="src/uvwMapper.js"></script>
+		<script src="src/gradientMap.js"></script>
+		<script src="src/closedCurve.js"></script>
+		<script src="src/attractor.js"></script>
+		<script src="src/meshModifier.js"></script>
+		<script src="src/PLYLoader_Quad.js"></script>
+		<script src="src/surfaceMorph.js"></script>
+		<script src="src/pointOnSurface.js"></script>
+		<script src="src/surfaceLattice.js"></script>
+		<script src="src/wrapSurface.js"></script>
+		<script src="src/actionRecorder.js"></script>
+		<script src="src/smooth.js"></script>
+
+		<!-- front-end libraries -->
+
+		<script src="src/frontEnd/FileSaver.js"></script>
+		<script src="src/frontEnd/dat.gui.js"></script>
+		<script src="src/frontEnd/stats.min.js"></script>
+		<script src="src/frontEnd/colors.js"></script>
+		<script src="src/frontEnd/environment.js"></script>
+		<script src="src/frontEnd/threejsSetup.js"></script>
+		<script src="src/frontEnd/bufferGeometry.js"></script>
+		<script src="src/frontEnd/OrbitControls.js"></script>
+		<script src="src/frontEnd/jquery-1.12.2.min.js"></script>
+
+		<!-- main program -->
+
+
+		<script src="scoliosisApp.js"></script>
+		<script src="main.js"></script>
+
+	</body>
+</html>
