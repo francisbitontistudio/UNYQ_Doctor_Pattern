@@ -271,15 +271,15 @@ meshModifier.prototype.createBrush = function () {
     //
     // });
 
-    folder.add(view,'brushType',['sculpt','smooth']);
+    folder.add(view,'brushType',['sculpt','smooth']).listen();
 
     folder.add(view.attractor,'range',0,200).onChange(function () {
 
         view.attractor.mesh.scale.set(view.attractor.range,view.attractor.range,view.attractor.range);
 
-    });
+    }).listen();
 
-    folder.add(view.attractor,'intensity',-4,4);
+    folder.add(view.attractor,'intensity',-4,4).listen();
 
     view.brushUI.add(view.meshSmooth,'smooth').name('Smooth All');
 
@@ -449,17 +449,17 @@ meshModifier.prototype.applyBrush = function (content) {
 
     var view = this;
 
-    var currentBrush = {};
+    view.currentBrush = {};
 
-    console.log(view.brushType);
+    view.currentBrush.brushType = view.brushType;
 
-    currentBrush.brushType = view.brushType;
+    view.currentBrush.position = view.attractor.position.clone();
 
-    currentBrush.position = view.attractor.position.clone();
+    view.currentBrush.range = view.attractor.range;
 
-    currentBrush.range = view.attractor.range;
+    view.currentBrush.intensity = view.attractor.intensity;
 
-    currentBrush.intensity = view.attractor.intensity;
+    console.log(view.currentBrush);
 
     if(content){
 
@@ -577,15 +577,17 @@ meshModifier.prototype.applyBrush = function (content) {
 
     // recover current Brush
 
-    view.brushType = currentBrush.brushType;
+    view.brushType = view.currentBrush.brushType;
 
-    view.attractor.position.copy(currentBrush.position);
+    view.attractor.position.copy(view.currentBrush.position);
 
-    view.attractor.range = currentBrush.range;
+    view.attractor.range = view.currentBrush.range;
 
-    view.attractor.intensity = currentBrush.intensity;
+    view.attractor.intensity = view.currentBrush.intensity;
 
 
+    // console.log('recovered');
+    // console.log(view.brushType);
 
 
 };

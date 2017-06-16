@@ -1155,7 +1155,7 @@ actionRecorder.prototype.load = function (URL) {
         if(view.list[index].stage ==1)view.app.next = view.app.guiScan.add(view.app,'confirmPlanes');
         if(view.list[index].stage ==2)view.app.next = view.app.guiScan.add(view.app,'confirmControlCurves');
         if(view.list[index].stage ==3)view.app.next = view.app.guiScan.add(view.app,'confirmScan');
-        if(view.list[index].stage ==4)view.app.next = view.app.guiScan.add(view.app.surfaceMorph,'generateLattice');
+        //if(view.list[index].stage ==4)view.app.next = view.app.guiScan.add(view.app.surfaceMorph,'generateLattice');
 
 
 
