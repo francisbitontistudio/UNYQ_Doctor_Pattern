@@ -462,7 +462,7 @@ scoliosisApp.prototype.confirmScan = function (loadFromFile) {
 
 
         // change gui buttons for next stage
-        view.guiScan.remove(view.next);
+        if(view.next) view.guiScan.remove(view.next);
         view.next = null;
 
         view.meshModifier.hide(); // hide meshModifier
@@ -474,6 +474,9 @@ scoliosisApp.prototype.confirmScan = function (loadFromFile) {
         view.actionRecorder.saveMesh(view.scan,3); // save mesh for stage 3 *this is only for file loading*
 
         if(!loadFromFile)  view.actionRecorder.recordBraceEdit('--start edit brace--',3);
+
+        // to fix asynchronous issue
+        if(loadFromFile) view.actionRecorder.list[view.actionRecorder.list.length-1].execute();
 
         $('#text').text('Please move control points to edit brace');
 
@@ -598,6 +601,11 @@ scoliosisApp.prototype.importDICOM = function (URL) {
             stackHelper.border.color = 0xFFFFFF;
 
             //scene.add(stackHelper);
+            //scene.add(stackHelper.children[1].children[0]);
+            //console.log(stackHelper);
+
+
+
             // build the gui
 
             //center camera and interactor to center of bouding box
@@ -605,6 +613,18 @@ scoliosisApp.prototype.importDICOM = function (URL) {
             // camera.lookAt(centerLPS.x, centerLPS.y, centerLPS.z);
             // camera.updateProjectionMatrix();
             // controls.target.set(centerLPS.x, centerLPS.y, centerLPS.z);
+
+            var material = stackHelper.children[1].children[0].material;
+
+            material.transparent = true;
+            material.depthTest = true;
+            material.depthWrite = true;
+
+            material.uniforms.opacity = { type: "f", value: 0.8 };
+            material.uniforms.fixedMatrix = { type: "m4", value: stackHelper.children[1].children[0].matrix.clone() };
+
+            material.vertexShader = document.getElementById( 'vertexshader_DICOM' ).textContent;
+            material.fragmentShader = document.getElementById( 'fragmentshader_DICOM' ).textContent;
 
 
 
@@ -620,13 +640,15 @@ scoliosisApp.prototype.importDICOM = function (URL) {
 
                 scene.add(group);
 
+                // keep scan on top
                 scene.remove(view.scan);
-                scene.add(view.scan);// keep scan on top
+                scene.add(view.scan);
 
+                // keep transform control on top
                 scene.remove( view.transromControl );
-                scene.add( view.transromControl );// keep transform control on top
+                scene.add( view.transromControl );
 
-
+                // populate dicom list
                 if(!view.dicomList) view.dicomList = view.guiScan.addFolder('dicoms');
                 view.dicomList.add(group,'visible').name('dicom'+ (view.dicoms.length+1));
                 view.dicomList.open();
@@ -639,14 +661,21 @@ scoliosisApp.prototype.importDICOM = function (URL) {
 
                 setupGUI(stackHelper,mesh);
 
+
+
                 var geometry = stackHelper.children[1].children[0].geometry;
                 geometry.computeBoundingBox();
                 var sizeX = geometry.boundingBox.max.x - geometry.boundingBox.min.x ;
                 var sizeY = geometry.boundingBox.max.y - geometry.boundingBox.min.y ;
                 var sizeZ = geometry.boundingBox.max.z - geometry.boundingBox.min.z ;
 
-                var defultScale = 0.18;
 
+                // scale down the Xray if it is larger than 500
+                sizeX *=  stackHelper.children[1].children[0].scale.x;
+                sizeY *=  stackHelper.children[1].children[0].scale.y;
+                sizeZ *=  stackHelper.children[1].children[0].scale.z;
+
+                var defultScale = sizeY > 500? 500/sizeY:1;
 
 
                 stackHelper.scale.set(defultScale,defultScale,defultScale);
@@ -658,27 +687,11 @@ scoliosisApp.prototype.importDICOM = function (URL) {
                     sizeZ * defultScale /2 - geometry.boundingBox.min.z
                 );
 
-                gui.add(stackHelper.scale,'x',0,0.3).name('scale').onChange(function () {
+                gui.add(stackHelper.scale,'x').step(0.01).name('scale').onChange(function () {
                     stackHelper.scale.set(stackHelper.scale.x,stackHelper.scale.x,stackHelper.scale.x);
 
                 });
-
-
-                var material = stackHelper.children[1].children[0].material;
-
-                material.transparent = true;
-                material.depthTest = true;
-                material.depthWrite = true;
-
-                material.uniforms.opacity = { type: "f", value: 0.8 };
-
                 gui.add(material.uniforms.opacity,'value',0,1).name('opacity');
-
-                material.vertexShader = document.getElementById( 'vertexshader_DICOM' ).textContent;
-                material.fragmentShader = document.getElementById( 'fragmentshader_DICOM' ).textContent;
-
-
-
 
             }
 
@@ -1064,7 +1077,7 @@ scoliosisApp.prototype.dragInFile = function () {
 
         var extension = file.name.split('.').pop().toLowerCase();
 
-        if(file.name.split('.').length<=1){
+        if(file.name.split('.').length<=1 || extension == 'dcm' || extension == 'dicom'){
 
             var reader = new FileReader();
             reader.onloadend = function () {

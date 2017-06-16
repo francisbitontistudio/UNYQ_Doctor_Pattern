@@ -117,9 +117,12 @@
 		<script type="x-shader/x-vertex" id="vertexshader_DICOM">
 					varying vec4 vPos;
 
+					uniform mat4 fixedMatrix;
+
 					void main() {
 
-					  vPos = vec4(position, 1.0 );
+					  //vPos = vec4(position, 1.0 );
+					  vPos = fixedMatrix * vec4(position, 1.0 );
 					  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0 );
 
 					}
