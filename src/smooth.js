@@ -95,6 +95,8 @@ meshSmooth.prototype.smooth = function (vertices) {
 
     var view = this;
 
+    var smoothAll = !vertices;
+
     var geometry = view.mesh.geometry;
 
     vertices = vertices || geometry.vertices;
@@ -131,5 +133,68 @@ meshSmooth.prototype.smooth = function (vertices) {
 
     geometry.verticesNeedUpdate = true;
     if(vertices) geometry.computeVertexNormals(); // avoid repeated computation
+
+
+
+    if(smoothAll){
+
+        // record step
+
+        var content = {
+
+            name: 'smooth all',
+
+            type: 'smooth all',
+
+            toExecute: function () {
+
+                var geometry = view.mesh.geometry;
+
+                vertices = vertices || geometry.vertices;
+
+                for(var k = 0; k<2; k++){
+
+
+                    for(var i=0; i< vertices.length; i++){
+
+                        var vertex = vertices[i];
+
+                        var averageNeigbor = new THREE.Vector3();
+
+                        for(var j=0; j<vertex.neighbors.length; j++){
+
+                            averageNeigbor.add(geometry.vertices[vertex.neighbors[j]]);
+
+                        }
+
+                        averageNeigbor.multiplyScalar(1/vertex.neighbors.length);
+
+                        averageNeigbor.sub(vertex);
+
+                        if(vertex.value) averageNeigbor.multiplyScalar(vertex.value);
+
+                        vertex.add(averageNeigbor);
+
+                    }
+
+
+                }
+
+                geometry.verticesNeedUpdate = true;
+                if(vertices) geometry.computeVertexNormals(); // avoid repeated computation
+
+            },
+
+            previous: view.app.meshModifier.brushSteps.slice(0) // this is the clone of brush history list
+
+        };
+
+        view.app.meshModifier.brushSteps.push(content);
+
+        view.app.actionRecorder.recordBrush(undefined,content);
+
+    }
+
+
 
 };

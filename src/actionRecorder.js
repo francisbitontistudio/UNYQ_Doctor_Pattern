@@ -450,6 +450,48 @@ actionRecorder.prototype.startBrush = function (mileStone,content) {
 
         view.app.meshModifier.openBrush();
 
+        // load mesh from beginning of sculpting
+        view.loadMesh(view.app.scan,2);
+
+        // reset brush step list
+        view.app.meshModifier.brushSteps = [];
+
+    });
+
+
+    // record mile stone, need to be after view.addAction which updates view.currentStep
+    if(mileStone!= undefined) view.recordMileStone(mileStone);
+
+};
+
+actionRecorder.prototype.recordBrush = function (mileStone,content) {
+
+    var view = this;
+
+
+    view.addAction(content.name,3,content,function () {
+
+        view.app.meshModifier.openBrush();
+
+        // load mesh from beginning of sculpting
+        view.loadMesh(view.app.scan,2);
+
+        // execute all previous steps
+
+        for(var i=0;i<content.previous.length;i++){
+
+            content.previous[i].toExecute();
+
+        }
+
+        content.toExecute();
+
+        // rewrite the brush steps;
+        view.app.meshModifier.brushSteps = content.previous;
+        view.app.meshModifier.brushSteps.push(content);
+
+        //console.log(view.app.meshModifier.brushSteps);
+
     });
 
 
@@ -512,7 +554,7 @@ actionRecorder.prototype.recordBraceEdit = function (name,mileStone,content) {
 
     view.addAction(content.name || 'edit brace',4,content,function () {
 
-
+        //console.log('just check');
 
         for(var i=0; i<curves.length;i++){
 
@@ -820,13 +862,37 @@ actionRecorder.prototype.load = function (URL) {
         console.log(data);
         //data is the JSON string
 
+        var parsed = 0;
+        var total = 0;
 
+        // count total number
+        for(var i=0; i<data.geometries.length;i++){
+
+            if(data.geometries[i]) total++;
+
+        }
+
+        var parsedGeometries = [];
         // load meshes for each stage
         for(var i=0; i<data.geometries.length;i++){
 
+            data.geometries[i].index = i;
+
             if(data.geometries[i]) new THREE.ObjectLoader().parse(  data.geometries[i], function ( mesh ) {
 
-                data.geometries[i] = mesh;
+
+                //data.geometries[i] = mesh;
+
+                parsedGeometries.push(mesh);
+
+                parsed++;
+
+                if(parsed == total)  {
+
+                    data.geometries = parsedGeometries;
+                    startApp(data);
+
+                }
 
             });
 
@@ -834,18 +900,20 @@ actionRecorder.prototype.load = function (URL) {
 
 
 
-        startApp(data);
+
 
     });
 
 
     function startApp(data){
 
-
+        console.log('loading finished, starting the app!');
 
         // STAGE 0 //
 
         // initialise the scan mesh
+
+
         view.app.loadScanMesh(data.geometries[0]);
 
         // read command list
@@ -961,6 +1029,20 @@ actionRecorder.prototype.load = function (URL) {
 
                 mileStone = undefined;  // register mile stone 1 for the first recordMeshEdit command
 
+
+
+                view.app.meshModifier.openBrush();
+
+                // load mesh from beginning of sculpting
+                view.loadMesh(view.app.scan,2);
+
+                // reset brush step list
+                view.app.meshModifier.brushSteps = [];
+
+
+
+
+
                 if(i == data.history.length-1){
 
                     endLoading();
@@ -969,6 +1051,32 @@ actionRecorder.prototype.load = function (URL) {
 
             }
 
+            if(thisCommand.type == 'sculpt' || thisCommand.type == 'smooth') {
+
+                console.log(thisCommand);
+
+                view.app.meshModifier.applyBrush(thisCommand);
+
+                if(i == data.history.length-1){
+
+                    endLoading();
+                    return;
+                }
+
+            }
+
+            if(thisCommand.type == 'smooth all') {
+
+
+                view.app.meshModifier.meshSmooth.smooth();
+
+                if(i == data.history.length-1){
+
+                    endLoading();
+                    return;
+                }
+
+            }
 
         }
 
@@ -1002,11 +1110,12 @@ actionRecorder.prototype.load = function (URL) {
 
                     view.app.wrapSurface.loadSurface(thisCommand.surface.controlPts,thisCommand.surface.knots1,thisCommand.surface.knots2); // load the nurbs surface
 
-                    view.app.confirmScan(true); // setup up brace on nurbs without recording the action
+                    view.app.confirmScan(true); // ASYNCHRONOUS setup up brace on nurbs without recording the action
 
                 }
 
                 view.recordBraceEdit(undefined,mileStone,thisCommand);
+
 
                 mileStone = undefined; // register mile stone 3 for the first recordBraceEdit command
 
@@ -1030,10 +1139,11 @@ actionRecorder.prototype.load = function (URL) {
 
     function endLoading() {
 
+
         // execute latest command
         var index = view.list.length-1;
-        view.list[index].execute();
         view.app.stage = view.list[index].stage;
+        view.list[index].execute();
 
 
         // update gui accordingly
@@ -1043,8 +1153,9 @@ actionRecorder.prototype.load = function (URL) {
         }
         if(view.list[index].stage ==0)view.app.next = view.app.guiScan.add(view.app,'editScan');
         if(view.list[index].stage ==1)view.app.next = view.app.guiScan.add(view.app,'confirmPlanes');
-        if(view.list[index].stage ==2)view.app.next = view.app.guiScan.add(view.app,'confirmScan');
-        if(view.list[index].stage ==3)view.app.next = view.app.guiScan.add(view.app.surfaceMorph,'generateLattice');
+        if(view.list[index].stage ==2)view.app.next = view.app.guiScan.add(view.app,'confirmControlCurves');
+        if(view.list[index].stage ==3)view.app.next = view.app.guiScan.add(view.app,'confirmScan');
+        if(view.list[index].stage ==4)view.app.next = view.app.guiScan.add(view.app.surfaceMorph,'generateLattice');
 
 
 

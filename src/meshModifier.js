@@ -18,6 +18,8 @@ var meshModifier = function (app) {
     view.curves = [];
     view.controlPoints = [];
 
+    view.brushSteps = [];
+
 
     view.brushOn = false;
     view.editCurve = false;
@@ -443,9 +445,35 @@ meshModifier.prototype.interactive = function () {
 
 };
 
-meshModifier.prototype.applyBrush = function () {
+meshModifier.prototype.applyBrush = function (content) {
 
     var view = this;
+
+    var currentBrush = {};
+
+    console.log(view.brushType);
+
+    currentBrush.brushType = view.brushType;
+
+    currentBrush.position = view.attractor.position.clone();
+
+    currentBrush.range = view.attractor.range;
+
+    currentBrush.intensity = view.attractor.intensity;
+
+    if(content){
+
+        view.brushType = content.type;
+
+        view.attractor.position.copy(content.position);
+
+        view.attractor.range = content.range;
+
+        view.attractor.intensity = content.intensity;
+
+    }
+
+    console.log(view.brushType);
 
     var vertices = [];
 
@@ -476,6 +504,88 @@ meshModifier.prototype.applyBrush = function () {
     view.mesh.geometry.verticesNeedUpdate = true;
 
     view.mesh.geometry.computeVertexNormals();
+
+
+    // record step
+
+
+
+    var content = {
+
+        name: view.brushType,
+
+        type: view.brushType,
+
+        position: view.attractor.position.clone(),
+
+        range: view.attractor.range,
+
+        intensity: view.attractor.intensity,
+
+        toExecute: function () {
+
+            view.brushType = content.type;
+
+            view.attractor.position.copy(content.position);
+
+            view.attractor.range = content.range;
+
+            view.attractor.intensity = content.intensity;
+
+            var vertices = [];
+
+            for(var i=0;i<view.mesh.geometry.vertices.length;i++){
+
+                var vertex = view.mesh.geometry.vertices[i];
+                var normal = view.mesh.geometry.normals[i];
+
+                if(vertex.distanceTo(view.attractor.position)<view.attractor.range){
+
+                    if(view.brushType == 'sculpt'){
+
+                        var value = view.attractor.cos(vertex.x,vertex.y,vertex.z);
+                        vertex.add(normal.multiplyScalar(value));
+
+                    }
+
+
+                    vertices.push(vertex);
+
+                }
+            }
+
+            if(view.brushType == 'smooth') view.meshSmooth.smooth(vertices);
+
+            view.mesh.geometry.verticesNeedUpdate = true;
+
+            view.mesh.geometry.computeVertexNormals();
+
+        },
+
+        previous: view.brushSteps.slice(0) // this is the clone of brush history list
+
+    };
+
+    view.brushSteps.push(content);
+
+    console.log(content);
+
+    view.app.actionRecorder.recordBrush(undefined,content);
+
+
+
+
+    // recover current Brush
+
+    view.brushType = currentBrush.brushType;
+
+    view.attractor.position.copy(currentBrush.position);
+
+    view.attractor.range = currentBrush.range;
+
+    view.attractor.intensity = currentBrush.intensity;
+
+
 
 
 };
